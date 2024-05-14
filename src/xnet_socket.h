@@ -13,7 +13,7 @@
     #define SOCKET_TYPE SOCKET
 
     typedef int socklen_t;
-#else
+#elif __linux__
     //linux head
     #include <sys/socket.h>
     #include <sys/epoll.h>
@@ -23,6 +23,13 @@
     #include <netdb.h>
 
     #define SOCKET_TYPE int
+elif __APPLE__ || defined(__FreeBSD__) || defined(__OpenBSD__)
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <sys/event.h>
+    #include <sys/time.h>
+    #include <fcntl.h>
+    #include <unistd.h>
 #endif
 
 #define MIN_READ_SIZE 512
@@ -98,7 +105,7 @@ typedef struct {
     struct epoll_event event[POLL_EVENT_MAX];
 
 #elif __APPLE__ || defined(__FreeBSD__) || defined(__OpenBSD__)
-    SOCKET_TYPE kueue_fd;
+    SOCKET_TYPE kqueue_fd;
     
 #endif
     xnet_socket_t slots[MAX_CLIENT_NUM];

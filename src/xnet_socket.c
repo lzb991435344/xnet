@@ -152,9 +152,8 @@ xnet_poll_init(xnet_poll_t *poll) {
     poll_add(poll->epoll_fd, fd[0], NULL);
 
 #elif __APPLE__ || defined(__FreeBSD__) || defined(__OpenBSD__)
-    poll->kueue_fd = kqueue();
-    if(-1 == poll->kueue_fd){
-        //TODO:close socket
+    poll->kqueue_fd = kqueue();
+    if(-1 == poll->kqueue_fd){
         return -1;
     }
 
