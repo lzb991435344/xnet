@@ -12,8 +12,12 @@ test : test/test.c src/xnet_timeheap.c src/xnet_config.c
 
 win : xnet_main.exe
 linux : xnet_main
+bsd : xnet_main_bsd
 xnet_main.exe : $(SRC_C)
 	gcc -o $@ $^ -std=gnu99 -lws2_32 -pthread
 
 xnet_main : $(SRC_C)
 	gcc -o $@ $^ -std=gnu99 -pthread
+
+xnet_main_bsd : $(SRC_C)
+	gcc -o $@ $^ -std=gnu99 -lkqueue -pthread

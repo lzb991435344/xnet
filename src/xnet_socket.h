@@ -93,9 +93,13 @@ typedef struct {
 
     dlink_node_t *socket_list;
     /*todo：select模型需要记录socket列表，检测socket触发只能遍历整个socket列表*/
-#else
+#elif __linux__
     SOCKET_TYPE epoll_fd;
     struct epoll_event event[POLL_EVENT_MAX];
+
+#elif __APPLE__ || defined(__FreeBSD__) || defined(__OpenBSD__)
+    SOCKET_TYPE kueue_fd;
+    
 #endif
     xnet_socket_t slots[MAX_CLIENT_NUM];
     int slot_index;
@@ -125,6 +129,17 @@ int xnet_send_data(xnet_poll_t *poll, xnet_socket_t *s);
 int xnet_listen_tcp_socket(xnet_poll_t *poll, int port, xnet_socket_t **socket_out);
 int xnet_accept_tcp_socket(xnet_poll_t *poll, xnet_socket_t *listen_s, xnet_socket_t **socket_out);
 int xnet_connect_tcp_socket(xnet_poll_t *poll, char *host, int port, xnet_socket_t **socket_out);
+
+
+//支持udp
+int xnet_udp_socket(xnet_poll_t *poll, int port, xnet_socket_t **socket_out);
+
+//send
+int xnet_udp_sendto(xnet_poll_t *poll, xnet_socket_t *s, const char *data, int size, const struct sockaddr_in *dest_addr, socklen_t addrlen);
+
+//recv
+int xnet_udp_recvfrom(xnet_poll_t *poll, xnet_socket_t *s, char **recvdata_out, struct sockaddr_in *src_addr, socklen_t *addrlen);
+
 
 //以下接口不希望对外提供
 bool wb_list_empty(xnet_socket_t *s);

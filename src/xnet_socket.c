@@ -8,8 +8,10 @@
 
 #ifdef _WIN32
     #include "socket_win.h"
-#else
+#elif defined(__linux__)
     #include "socket_linux.h"
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+    #include "socket_bsd.h"
 #endif
 
 static int
@@ -138,7 +140,7 @@ xnet_poll_init(xnet_poll_t *poll) {
     FD_ZERO(&poll->errorfds);
     FD_SET(fd[0], &poll->readfds);
     poll->socket_list = NULL;
-#else
+#elif __linux__
     //epoll
     poll->epoll_fd = epoll_create(1024);
     if (poll->epoll_fd == -1) {
@@ -148,6 +150,14 @@ xnet_poll_init(xnet_poll_t *poll) {
     }
 
     poll_add(poll->epoll_fd, fd[0], NULL);
+
+#elif __APPLE__ || defined(__FreeBSD__) || defined(__OpenBSD__)
+    poll->kueue_fd = kqueue();
+    if(-1 == poll->kueue_fd){
+        //TODO:close socket
+        return -1;
+    }
+
 #endif
 
     return 0;
@@ -159,10 +169,23 @@ xnet_poll_addfd(xnet_poll_t *poll, SOCKET_TYPE fd, int id) {
     //select
     FD_SET(fd, &poll->errorfds);
     add_to_socketlist(poll, fd, id);
-#else
+#elif __linux__
     //epoll
     xnet_socket_t *s = &poll->slots[id];
     poll_add(poll->epoll_fd, fd, s);
+#elif __APPLE__ || defined(__FreeBSD__) || defined(__OpenBSD__)
+    //kqueue
+    xnet_socket_t *s = &poll->slots[id];
+    if (kqueue_add(poll->kqueue_fd, fd, s, EVFILT_READ, EV_ADD | EV_ENABLE) == -1) {
+        //perror("kqueue add error");
+        return -1;
+    }
+    if (s->writing) {
+        if (kqueue_add(poll->kqueue_fd, fd, s, EVFILT_WRITE, EV_ADD | EV_ENABLE) == -1) {
+            //perror("kqueue add error");
+            return -1;
+        }
+    }
 #endif
 }
 
@@ -483,6 +506,75 @@ block_send(SOCKET_TYPE fd, void *buffer, int sz) {
         assert(n == sz);
         return;
     }
+}
+
+
+//支持udp
+int 
+xnet_udp_socket(xnet_poll_t *poll, int port, xnet_socket_t **socket_out){
+    
+    int id;
+
+    SOCKET_TYPE fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(-1 == fd) goto FAILED;
+    
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(port);
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        goto FAILED;
+    }
+
+    id = alloc_socket_id(poll);
+    if (-1 == id) {
+        goto FAILED;
+    }
+
+    //设置非阻塞
+    set_nonblocking(id);
+
+    //这里已接入到轮训 new_fd->xnet_poll_addfd 
+    xnet_socket_t *s = new_fd(poll, fd, id, SOCKET_PROTOCOL_UDP, true);
+    s->type = SOCKET_TYPE_CONNECTED;
+
+    if(socket_out) *socket_out = s;
+
+    FAILED:
+    if (fd) closesocket(fd);
+    return -1;
+}
+
+
+//recv
+int 
+xnet_udp_recvfrom(xnet_poll_t *poll, xnet_socket_t *s, char **recvdata_out, struct sockaddr_in *src_addr, socklen_t *addrlen) {
+    char *buffer = (char*)malloc(s->read_size);
+    if(NULL == buffer){
+        return -1;
+    }
+
+    int n = recvfrom(s->fd, buffer, s->read_size, 0, (struct sockaddr *)src_addr, addrlen);
+    if (n <= 0) {
+        free(buffer);
+        return -1;
+    }
+
+    *recvdata_out = buffer;
+    return n;
+}
+
+//send
+int 
+xnet_udp_sendto(xnet_poll_t *poll, xnet_socket_t *s, const char *data, int size, const struct sockaddr_in *dest_addr, socklen_t addrlen) {
+    int n = sendto(s->fd, data, size, 0, (const struct sockaddr *)dest_addr, addrlen);
+    if (n < 0) {
+        return -1;
+    }
+
+    return n;
 }
 
 inline int
